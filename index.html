@@ -1,0 +1,389 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El Arquitecto del Descanso</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Tailwind Config for Custom Colors and Animations -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        indigo: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            900: '#312e81',
+                            950: '#1e1b4b',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                        'slide-up': 'slideUp 0.4s ease-out forwards',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'lock-vault': 'lockVault 1.5s ease-in-out forwards'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        lockVault: {
+                            '0%': { transform: 'scale(1)', opacity: '1' },
+                            '50%': { transform: 'scale(0.95)', opacity: '0.8', filter: 'blur(2px)' },
+                            '100%': { transform: 'scale(0.8) translateY(40px)', opacity: '0', filter: 'blur(10px)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom CSS -->
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: transparent;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Transition for dark mode/night mode simulation */
+        .theme-transition {
+            transition: background-color 0.8s ease, color 0.8s ease;
+        }
+    </style>
+
+    <!-- Import Maps -->
+    <script type="importmap">
+        {
+            "imports": {
+                "react": "https://esm.sh/react@18.2.0",
+                "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+                "lucide-react": "https://esm.sh/lucide-react@0.292.0"
+            }
+        }
+    </script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="p-4 md:p-8 text-slate-900 bg-slate-50 min-h-screen flex justify-center w-full">
+
+    <div id="root" class="w-full max-w-lg mx-auto"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Moon, Sun, Clock, ArrowRight, Lock, 
+            Play, CheckCircle2, ShieldCheck, BedDouble, ChevronRight
+        } from 'lucide-react';
+
+        // Helpers matemáticos para calcular horas sin date-fns
+        const parseTime = (timeStr) => {
+            const [h, m] = timeStr.split(':').map(Number);
+            return { h, m };
+        };
+
+        const subtractMinutes = (timeStr, minsToSubtract) => {
+            const { h, m } = parseTime(timeStr);
+            let date = new Date();
+            date.setHours(h, m, 0, 0);
+            date.setMinutes(date.getMinutes() - minsToSubtract);
+            
+            return date.toLocaleTimeString('es-ES', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true 
+            });
+        };
+
+        const formatSeconds = (totalSeconds) => {
+            const m = Math.floor(totalSeconds / 60);
+            const s = totalSeconds % 60;
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        };
+
+        function App() {
+            // Estados principales
+            const [step, setStep] = useState('calculator'); // 'calculator', 'vault', 'routine', 'done'
+            const [wakeTime, setWakeTime] = useState('07:00');
+            const [cycles, setCycles] = useState(5); // 5 ciclos de 90 min = 7.5 horas
+            const [worries, setWorries] = useState('');
+            const [isVaultLocking, setIsVaultLocking] = useState(false);
+            
+            // Estado del temporizador
+            const [timeLeft, setTimeLeft] = useState(20 * 60); // 20 minutos
+            const [timerActive, setTimerActive] = useState(false);
+
+            // Cargar datos de LocalStorage
+            useEffect(() => {
+                const saved = localStorage.getItem('arquitecto_sueño');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    if (data.wakeTime) setWakeTime(data.wakeTime);
+                    if (data.cycles) setCycles(data.cycles);
+                }
+            }, []);
+
+            // Guardar configuración al cambiar
+            useEffect(() => {
+                localStorage.setItem('arquitecto_sueño', JSON.stringify({ wakeTime, cycles }));
+            }, [wakeTime, cycles]);
+
+            // Lógica del Temporizador de Rutina
+            useEffect(() => {
+                let interval = null;
+                if (timerActive && timeLeft > 0) {
+                    interval = setInterval(() => {
+                        setTimeLeft((prev) => prev - 1);
+                    }, 1000);
+                } else if (timeLeft === 0 && timerActive) {
+                    setTimerActive(false);
+                    setStep('done');
+                }
+                return () => clearInterval(interval);
+            }, [timerActive, timeLeft]);
+
+            const totalSleepMinutes = cycles * 90;
+            const sleepTimeStr = subtractMinutes(wakeTime, totalSleepMinutes);
+            const windDownTimeStr = subtractMinutes(wakeTime, totalSleepMinutes + 20); // 20 min antes de dormir
+
+            // Determinar en qué fase de la rutina estamos
+            const getRoutinePhase = () => {
+                if (timeLeft > 15 * 60) return { 
+                    title: "Desconexión", 
+                    desc: "Apaga pantallas, ordena tu cuarto, prepara la ropa de mañana.",
+                    color: "bg-indigo-600"
+                };
+                if (timeLeft > 5 * 60) return { 
+                    title: "Desaceleración", 
+                    desc: "Lee un libro físico, estira suavemente, bebe agua.",
+                    color: "bg-indigo-700"
+                };
+                return { 
+                    title: "Aterrizaje", 
+                    desc: "Luces apagadas. Cierra los ojos y haz respiraciones profundas (4-7-8).",
+                    color: "bg-indigo-900"
+                };
+            };
+
+            const handleLockVault = () => {
+                if (!worries.trim()) {
+                    setStep('routine');
+                    setTimerActive(true);
+                    return;
+                }
+                
+                setIsVaultLocking(true);
+                setTimeout(() => {
+                    setWorries('');
+                    setIsVaultLocking(false);
+                    setStep('routine');
+                    setTimerActive(true);
+                }, 1500);
+            };
+
+            const resetApp = () => {
+                setStep('calculator');
+                setTimeLeft(20 * 60);
+                setTimerActive(false);
+                setWorries('');
+            };
+
+            if (step === 'calculator') {
+                return (
+                    <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 animate-fade-in w-full">
+                        <div class="bg-indigo-50 p-6 border-b border-indigo-100 flex items-center gap-3">
+                            <Clock class="text-indigo-600" size={28} />
+                            <div>
+                                <h1 class="font-bold text-slate-800 text-lg">El Arquitecto del Ritmo</h1>
+                                <p class="text-sm text-indigo-600 font-medium">Diseña tu ventana de sueño</p>
+                            </div>
+                        </div>
+
+                        <div class="p-6 space-y-6">
+                            <div class="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-1">¿A qué hora debes despertar mañana?</label>
+                                    <input 
+                                        type="time" 
+                                        value={wakeTime}
+                                        onChange={(e) => setWakeTime(e.target.value)}
+                                        class="w-full bg-white border border-slate-300 rounded-lg py-3 px-4 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-lg"
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-1">Horas de sueño deseadas (Ciclos)</label>
+                                    <select 
+                                        value={cycles}
+                                        onChange={(e) => setCycles(Number(e.target.value))}
+                                        class="w-full bg-white border border-slate-300 rounded-lg py-3 px-4 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value={4}>6 horas (4 ciclos de 90m)</option>
+                                        <option value={5}>7.5 horas (5 ciclos de 90m) - Ideal</option>
+                                        <option value={6}>9 horas (6 ciclos de 90m)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Contrato Visual */}
+                            <div class="relative pl-6 space-y-6 before:absolute before:inset-y-0 before:left-[11px] before:w-[2px] before:bg-indigo-100">
+                                <div class="relative">
+                                    <div class="absolute -left-[30px] bg-indigo-100 p-1 rounded-full text-indigo-600">
+                                        <ShieldCheck size={14} />
+                                    </div>
+                                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">El Trato Comienza</h3>
+                                    <p class="font-bold text-indigo-600 text-lg">{windDownTimeStr}</p>
+                                    <p class="text-sm text-slate-600">Fin del uso del teléfono. Inicia rutina de 20 min.</p>
+                                </div>
+
+                                <div class="relative">
+                                    <div class="absolute -left-[30px] bg-indigo-500 p-1 rounded-full text-white">
+                                        <Moon size={14} />
+                                    </div>
+                                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Ventana de Sueño</h3>
+                                    <p class="font-bold text-slate-800 text-lg">{sleepTimeStr}</p>
+                                    <p class="text-sm text-slate-600">Aterrizaje en cama. Luces apagadas.</p>
+                                </div>
+
+                                <div class="relative">
+                                    <div class="absolute -left-[30px] bg-amber-400 p-1 rounded-full text-white">
+                                        <Sun size={14} />
+                                    </div>
+                                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Despertar</h3>
+                                    <p class="font-bold text-slate-800 text-lg">{wakeTime}</p>
+                                    <p class="text-sm text-slate-600">Cerebro reparado. Fin del ciclo.</p>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={() => setStep('vault')}
+                                class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-4 rounded-xl hover:bg-indigo-700 transition-all active:scale-95 font-bold shadow-md shadow-indigo-200"
+                            >
+                                Aceptar e Iniciar Noche <ArrowRight size={18} />
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (step === 'vault') {
+                return (
+                    <div class={`bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700 w-full text-white theme-transition ${isVaultLocking ? 'animate-lock-vault' : 'animate-fade-in'}`}>
+                        <div class="p-6 text-center space-y-2 pt-8">
+                            <div class="bg-slate-800 w-16 h-16 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-inner">
+                                <Lock class="text-indigo-400" size={32} />
+                            </div>
+                            <h2 class="text-2xl font-bold">La Bóveda de Pensamientos</h2>
+                            <p class="text-slate-400 text-sm px-4">
+                                Vacía aquí todo lo que te preocupa para mañana. Tu cerebro no necesita resolverlo a esta hora. Quedará bajo llave.
+                            </p>
+                        </div>
+
+                        <div class="p-6 space-y-4">
+                            <textarea
+                                value={worries}
+                                onChange={(e) => setWorries(e.target.value)}
+                                placeholder="Escribe aquí... correos pendientes, errores, tareas..."
+                                class="w-full h-32 bg-slate-800/50 border border-slate-600 rounded-xl py-3 px-4 text-indigo-50 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none placeholder-slate-500"
+                            />
+                            
+                            <button 
+                                onClick={handleLockVault}
+                                disabled={isVaultLocking}
+                                class="w-full flex items-center justify-center gap-2 bg-indigo-500 text-white py-4 rounded-xl hover:bg-indigo-600 transition-all font-bold shadow-lg"
+                            >
+                                {worries.trim() ? 'Sellar Pensamientos' : 'Mi mente está limpia ->'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (step === 'routine') {
+                const phase = getRoutinePhase();
+                const progress = ((1200 - timeLeft) / 1200) * 100;
+
+                return (
+                    <div class={`rounded-2xl shadow-2xl overflow-hidden w-full text-white theme-transition animate-slide-up ${phase.color}`}>
+                        <div class="p-6 flex flex-col items-center justify-center min-h-[400px] text-center space-y-8 relative">
+                            
+                            {/* Barra de progreso superior */}
+                            <div class="absolute top-0 left-0 right-0 h-1 bg-black/20">
+                                <div 
+                                    class="h-full bg-white/40 transition-all duration-1000 ease-linear"
+                                    style={{ width: `${progress}%` }}
+                                ></div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <span class="bg-white/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest backdrop-blur-sm">
+                                    Fase Actual
+                                </span>
+                                <h2 class="text-3xl font-bold">{phase.title}</h2>
+                                <p class="text-white/80 max-w-xs mx-auto">{phase.desc}</p>
+                            </div>
+
+                            <div class="text-7xl font-light tracking-tighter tabular-nums drop-shadow-md">
+                                {formatSeconds(timeLeft)}
+                            </div>
+
+                            <div class="pt-4 flex gap-4 w-full px-4">
+                                <button 
+                                    onClick={() => setTimerActive(!timerActive)}
+                                    class="flex-1 flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md py-3 rounded-xl transition-all font-medium border border-white/10"
+                                >
+                                    {timerActive ? 'Pausar' : <><Play size={18}/> Reanudar</>}
+                                </button>
+                                <button 
+                                    onClick={() => { setTimerActive(false); setStep('done'); }}
+                                    class="flex-1 flex items-center justify-center gap-2 bg-white text-indigo-900 py-3 rounded-xl hover:bg-slate-100 transition-all font-bold shadow-xl"
+                                >
+                                    Finalizar <CheckCircle2 size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div class="bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-800 w-full text-center animate-fade-in">
+                    <div class="p-10 space-y-6">
+                        <div class="w-20 h-20 bg-indigo-900/50 rounded-full mx-auto flex items-center justify-center">
+                            <BedDouble class="text-indigo-300" size={40} />
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <h2 class="text-2xl font-bold text-white">Vuelo Aterrizado</h2>
+                            <p class="text-slate-400">Tus pensamientos están asegurados. Tu cuerpo está relajado. Es seguro apagar el sistema.</p>
+                        </div>
+
+                        <button 
+                            onClick={resetApp}
+                            class="mt-8 text-indigo-400 text-sm font-medium hover:text-indigo-300 flex items-center gap-1 mx-auto"
+                        >
+                            <Sun size={14} /> Volver a planificar el día
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
